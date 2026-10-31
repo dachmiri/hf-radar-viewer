@@ -1,0 +1,55 @@
+{
+ "site": "Israel_2 (PROVISIONAL: straight line at lambda/2 along TRUENORTH=21 deg; channel order and steering sign unverified)",
+ "antennas_en_m": [
+  [
+   0.0,
+   0.0
+  ],
+  [
+   6.559,
+   17.087
+  ],
+  [
+   13.118,
+   34.173
+  ],
+  [
+   19.677,
+   51.26
+  ],
+  [
+   26.236,
+   68.347
+  ],
+  [
+   32.795,
+   85.434
+  ],
+  [
+   39.354,
+   102.52
+  ],
+  [
+   45.913,
+   119.607
+  ],
+  [
+   52.472,
+   136.694
+  ],
+  [
+   59.031,
+   153.78
+  ],
+  [
+   65.59,
+   170.867
+  ],
+  [
+   72.149,
+   187.954
+  ]
+ ],
+ "boresight_deg": 291.0,
+ "scan_halfwidth_deg": 60
+}

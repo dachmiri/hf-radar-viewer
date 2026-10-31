@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beamforming Viewer</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1c2330; --muted: #5d6778; --line: #dde1e8;
+  --accent: #1f6feb; --accent-ink: #ffffff; --warn-bg: #fff4d6; --warn-ink: #6b4a00;
+  --bad-bg: #fde8e8; --bad-ink: #8a1c1c; --good: #1a7f37; --chip: #eef1f5;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161d; --panel: #1b212b; --ink: #e6e9ee; --muted: #9aa4b4; --line: #2c3442;
+    --accent: #4c8dff; --accent-ink: #0b1220; --warn-bg: #3a2f12; --warn-ink: #f3d68a;
+    --bad-bg: #3d1b1b; --bad-ink: #f4b4b4; --good: #4cc26a; --chip: #262e3a;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1200px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 24px; margin: 0 0 4px; }
+h2 { font-size: 18px; margin: 0 0 8px; }
+h3 { font-size: 15px; margin: 0 0 4px; }
+p { margin: 0 0 8px; overflow-wrap: anywhere; }
+.muted { color: var(--muted); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 18px; margin-top: 16px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+label { display: block; font-weight: 600; margin-bottom: 4px; }
+.hint { font-weight: 400; color: var(--muted); font-size: 13px; }
+input[type=file], select, input[type=number] { width: 100%; padding: 8px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit; }
+.drop { border: 2px dashed var(--line); border-radius: 10px; padding: 22px; text-align: center;
+  cursor: pointer; }
+.drop.over { border-color: var(--accent); }
+.drop strong { display: block; font-size: 16px; }
+button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 6px;
+  padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+button.link { background: none; color: var(--accent); padding: 0; font-weight: 400; }
+details summary { cursor: pointer; color: var(--muted); }
+.banner { padding: 10px 14px; border-radius: 8px; margin-top: 12px; }
+.warn { background: var(--warn-bg); color: var(--warn-ink); }
+.bad { background: var(--bad-bg); color: var(--bad-ink); }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line);
+  border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite;
+  vertical-align: -2px; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.stats { display: flex; flex-wrap: wrap; gap: 10px; }
+.stat { background: var(--chip); border-radius: 8px; padding: 8px 12px; }
+.stat b { display: block; font-size: 20px; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 600; }
+td.why { white-space: normal; min-width: 220px; color: var(--muted); }
+.fig img { display: block; max-width: 100%; max-height: 760px; width: auto; border-radius: 6px; border: 1px solid var(--line); background: #fff; }
+.fig { margin-top: 18px; }
+#map { height: 420px; border-radius: 8px; border: 1px solid var(--line); margin-top: 10px; }
+code { overflow-wrap: anywhere; }
+pre { background: var(--chip); padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
+.runs li { margin: 2px 0; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>HF radar beamforming viewer</h1>
+  <p class="muted">Upload a WERA <code>.SORT</code> file. The page splits the radar echo by
+  direction (beamforming), measures how fast things move (Doppler), and looks for ships and
+  other objects at sea.</p>
+  <p class="muted"><b>Your file stays on your computer.</b> Everything runs inside this browser tab
+  (Python running in the page); nothing is uploaded anywhere.</p>
+
+  <section class="panel">
+    <h2>1. Choose the file and settings</h2>
+    <div class="drop" id="drop">
+      <strong id="dropText">Drop a .SORT file here, or click to choose one</strong>
+      <span class="hint">One radar recording, as written by the WERA radar</span>
+      <input type="file" id="sortFile" accept=".SORT,.sort,.RFI,.rfi" hidden>
+    </div>
+
+    <div class="grid" style="margin-top:14px">
+      <div>
+        <label for="site">Antenna layout (site file)
+          <span class="hint">where each antenna stands; needed to tell directions apart</span></label>
+        <select id="site"></select>
+        <p class="hint" style="margin-top:6px">Have the real layout?
+          <button class="link" id="addSiteBtn" type="button">Add a site file (.json)</button>
+          <input type="file" id="siteFile" accept=".json" hidden></p>
+      </div>
+      <div>
+        <label><input type="checkbox" id="targets" checked> Look for ships and objects</label>
+        <p class="hint">Adds the "Objects found" plot, the table and the map. Takes a few extra seconds.</p>
+      </div>
+    </div>
+
+    <details style="margin-top:10px">
+      <summary>More settings (optional)</summary>
+      <div class="grid" style="margin-top:10px">
+        <div><label for="minSnr">Detection threshold, dB <span class="hint">default 15. Lower finds
+          weaker echoes but more false alarms</span></label>
+          <input type="number" id="minSnr" placeholder="15" step="1"></div>
+        <div><label for="rangeKm">Distance for the overview plots, km <span class="hint">default:
+          one third of the maximum</span></label>
+          <input type="number" id="rangeKm" placeholder="auto" step="0.5"></div>
+        <div><label for="bearing">Direction for the overview plots, degrees
+          <span class="hint">compass, 0 = north. Default: straight out from the array</span></label>
+          <input type="number" id="bearing" placeholder="auto" step="1"></div>
+      </div>
+    </details>
+
+    <div id="siteWarn"></div>
+    <div style="margin-top:14px">
+      <button id="runBtn" disabled>Run beamforming</button>
+      <span id="status" class="muted" style="margin-left:10px"></span>
+    </div>
+  </section>
+
+  <section id="results"></section>
+
+  <p class="muted" style="margin-top:24px; font-size:13px">Method: Guerin, "High-Frequency Radars for
+  the Oceanographer". Processing script: <a href="beamforming_sort.py">beamforming_sort.py</a>.</p>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt = (x, d = 1) => (x === null || x === undefined || isNaN(x)) ? "" : Number(x).toFixed(d);
+
+// Antenna layouts shipped with the site. Visitors can add their own (kept in this tab only).
+let sites = [
+  { path: "israel2/site_israel2_provisional.json", note: "provisional" },
+];
+let file = null, worker = null, busy = false;
+
+const OUTPUTS = [
+  ["run_objects.png", "Objects found (ships and fixed things)",
+   "Each map is distance from the radar (up) against compass direction (across). " +
+   "Left: echoes that move but are not the sea itself, so likely ships. " +
+   "Second: echoes that do not move at all (buoys, platforms, the coast). " +
+   "Third: echoes that come and go during the recording, as a passing ship does. " +
+   "Red circles are object candidates; white crosses are peaks the script thinks are " +
+   "false alarms. Right: speed (Doppler) against distance in the direction of the " +
+   "strongest moving candidate; the shaded bands are where the sea's own echo sits."],
+  ["run_max_doppler.png", "Strongest echo in every direction and distance",
+   "One coloured square per radar cell: how strong the brightest echo is there, " +
+   "whatever its speed. Most of it is the sea. A horizontal stripe across all " +
+   "directions at one distance is usually electrical hum, not something real."],
+  ["run.png", "Overview: how the antennas listen, and sea currents",
+   "Top left: how sharply the antenna array listens in one direction (narrow peak = " +
+   "sharp). Top right: echo strength by direction and speed at one distance; the two " +
+   "dashed lines are where sea-wave echoes are expected. Bottom left: a single " +
+   "spectrum with its two sea peaks. Bottom right: the surface current toward (blue) " +
+   "or away from (red) the radar, worked out from how far the sea peaks moved."],
+  ["run_cube.png", "The full data cube, sliced",
+   "The script turns the file into a 3-D block: direction x speed x distance. " +
+   "Left: direction-by-speed slices at 8 distances, near to far. Right: speed-by-" +
+   "distance for one direction."],
+];
+
+async function loadSites() {
+  for (const s of sites) if (!s.text) {
+    s.text = await (await fetch(s.path)).text();
+    const j = JSON.parse(s.text); s.n = j.antennas_en_m.length;
+  }
+  $("site").innerHTML = sites.map((s, i) =>
+    `<option value="${i}">${esc(s.path)} (${s.n} antennas${s.note ? ", " + s.note : ""})</option>`).join("");
+  $("site").value = String(sites.length - 1 >= 0 && sites.at(-1).mine ? sites.length - 1 : 0);
+  showSiteWarn();
+}
+function siteWarnText(s) {
+  if (!s) return "";
+  if (s.note === "provisional") return "This antenna layout is a <b>guess</b> (a straight line, 18.3 m apart). " +
+    "Distances and speeds are fine, but <b>directions (bearings) are provisional</b> until the real layout is known.";
+  return "";
+}
+function showSiteWarn() {
+  const t = siteWarnText(sites[+$("site").value]);
+  $("siteWarn").innerHTML = t ? `<div class="banner warn">${t}</div>` : "";
+}
+$("site").onchange = showSiteWarn;
+
+function setFile(f) {
+  file = f;
+  $("dropText").textContent = f ? `${f.name}  (${(f.size / 1e6).toFixed(1)} MB)` :
+    "Drop a .SORT file here, or click to choose one";
+  $("runBtn").disabled = !f || busy;
+}
+$("drop").onclick = () => $("sortFile").click();
+$("sortFile").onchange = e => setFile(e.target.files[0]);
+["dragover", "dragenter"].forEach(ev => $("drop").addEventListener(ev, e => {
+  e.preventDefault(); $("drop").classList.add("over"); }));
+["dragleave", "drop"].forEach(ev => $("drop").addEventListener(ev, e => {
+  e.preventDefault(); $("drop").classList.remove("over"); }));
+$("drop").addEventListener("drop", e => { if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+
+$("addSiteBtn").onclick = () => $("siteFile").click();
+$("siteFile").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const text = await f.text();
+  let j;
+  try { j = JSON.parse(text); } catch (err) { showError("That site file is not valid JSON: " + err.message); return; }
+  const a = j.antennas_en_m;
+  if (!Array.isArray(a) || a.length < 2 || !a.every(p => Array.isArray(p) && p.length === 2)) {
+    showError('That site file needs "antennas_en_m": a list of [east, north] antenna positions in metres.'); return; }
+  if (typeof j.boresight_deg !== "number") {
+    showError('That site file needs "boresight_deg": the compass direction the array faces.'); return; }
+  sites.push({ path: f.name, text, n: a.length, mine: true,
+               note: /provisional/i.test(String(j.site || "")) ? "provisional" : "" });
+  await loadSites();
+  $("results").innerHTML = "";
+};
+
+function showError(msg) {
+  $("results").innerHTML = `<div class="banner bad">${esc(msg)}</div>`;
+}
+
+function getWorker() {
+  if (!worker) { worker = new Worker("worker.js"); worker.onmessage = () => {}; }
+  return worker;
+}
+
+$("runBtn").onclick = async () => {
+  const site = sites[+$("site").value];
+  const args = [];
+  if ($("targets").checked) args.push("--targets");
+  if ($("minSnr").value) args.push("--min-snr-targets", $("minSnr").value);
+  if ($("rangeKm").value) args.push("--range-km", $("rangeKm").value);
+  if ($("bearing").value) args.push("--bearing", $("bearing").value);
+  busy = true; $("runBtn").disabled = true;
+  $("status").innerHTML = '<span class="spinner"></span>Starting...';
+  const bytes = await file.arrayBuffer();
+  const w = getWorker();
+  const fname = file.name;
+  w.onmessage = e => {
+    const m = e.data;
+    if (m.type === "status") { $("status").innerHTML = '<span class="spinner"></span>' + esc(m.text); return; }
+    busy = false; $("runBtn").disabled = !file;
+    if (m.type === "error") {
+      $("status").textContent = "";
+      showError("Something went wrong while loading or running Python: " + m.text +
+                ". Try reloading the page; a recent Chrome, Edge, Firefox or Safari is needed.");
+      worker.terminate(); worker = null; return;
+    }
+    $("status").textContent = m.ok ? `Done in ${m.seconds} s.` : "The script stopped with an error.";
+    showRun({ ...m, filename: fname, site, targets: args.includes("--targets"),
+              command: ["python beamforming_sort.py", fname, site.path, ...args].join(" ") });
+  };
+  w.onerror = e => { busy = false; $("runBtn").disabled = !file; $("status").textContent = "";
+    showError("The processing worker failed: " + (e.message || "unknown error")); worker = null; };
+  w.postMessage({ sortBytes: bytes, siteText: site.text, args }, [bytes]);
+};
+
+let map = null, urls = [];
+function showRun(d) {
+  urls.forEach(u => URL.revokeObjectURL(u)); urls = [];
+  const url = (f, type) => { const u = URL.createObjectURL(new Blob([d.files[f]], { type })); urls.push(u); return u; };
+  const cands = d.objects.filter(o => !o.flag), flagged = d.objects.filter(o => o.flag);
+  const warn = siteWarnText(d.site);
+  let h = `<div class="panel"><h2>2. Results for ${esc(d.filename)}</h2>
+    <p class="muted">Site file: ${esc(d.site.path)} &middot; ${d.seconds} s</p>`;
+  if (warn) h += `<div class="banner warn">${warn}</div>`;
+  if (!d.ok) h += `<div class="banner bad">The script could not finish. Is this a WERA .SORT file?
+    Its message is below.</div><pre>${esc(d.log)}</pre></div>`;
+  else {
+    const hd = Object.fromEntries(d.header);
+    h += `<div class="stats" style="margin-top:12px">
+      ${d.targets ? `<div class="stat"><b>${cands.length}</b>object candidates</div>
+      <div class="stat"><b>${flagged.length}</b>peaks set aside as false alarms</div>` : ""}
+      ${hd["bearings scanned"] ? `<div class="stat"><b>${esc(hd["bearings scanned"])}</b>directions scanned</div>` : ""}
+      ${hd["valid radial currents"] ? `<div class="stat"><b>${esc(hd["valid radial currents"].split(" ")[0])}</b>cells with a sea-current reading</div>` : ""}
+    </div>`;
+    if (d.targets) {
+      h += `<h3 style="margin-top:18px">Object candidates</h3>
+        <p class="muted">Strongest first. <b>Moving</b> = moves differently from the sea, so likely a ship.
+        <b>Still</b> = does not move (buoy, platform, coast). Speed is only the part toward or away from the
+        radar: + means moving away, &minus; means coming closer.</p>` + objTable(cands, false);
+      if (flagged.length) h += `<details style="margin-top:10px"><summary>${flagged.length} peaks set aside as
+        probable false alarms (and why)</summary>${objTable(flagged, true)}</details>`;
+      h += `<h3 style="margin-top:18px">On a map</h3>
+        <p class="muted">Red = moving candidate, blue = still candidate, grey = set aside. Black square = the radar.
+        ${warn ? "Positions depend on the provisional directions." : ""}</p><div id="map"></div>`;
+    }
+    for (const [f, title, explain] of OUTPUTS) if (d.files[f]) {
+      const u = url(f, "image/png");
+      h += `<div class="fig"><h3>${esc(title)}</h3><p class="muted">${esc(explain)}</p>
+        <a href="${u}" target="_blank"><img src="${u}" alt="${esc(title)}"></a></div>`;
+    }
+    const base = d.filename.replace(/\.[^.]*$/, "");
+    const dl = [];
+    if (d.files["run_objects.csv"]) dl.push(`<a href="${url("run_objects.csv", "text/csv")}" download="${esc(base)}_objects.csv">objects table (.csv)</a>`);
+    if (d.files["run.npz"]) dl.push(`<a href="${url("run.npz", "application/octet-stream")}" download="${esc(base)}_cube.npz">data cube (.npz, for Python / ML)</a>`);
+    h += `<p style="margin-top:16px">Downloads: ${dl.join(" &middot; ")}</p>
+      <details><summary>What the script printed</summary><p class="muted" style="margin-top:6px">Same as running:
+      <code>${esc(d.command)}</code></p><pre>${esc(d.log)}</pre></details></div>`;
+  }
+  $("results").innerHTML = h;
+  if (d.ok && d.targets) drawMap(d);
+  $("results").scrollIntoView({ behavior: "smooth" });
+}
+
+function objTable(rows, flagged) {
+  if (!rows.length) return `<p class="muted">None found above the threshold.</p>`;
+  return `<div class="tablewrap"><table><tr><th>Type</th><th>Strength (dB above noise)</th>
+    <th>Distance (km)</th><th>Direction (&deg;)</th><th>Speed toward/away (m/s)</th>
+    <th>Latitude</th><th>Longitude</th>${flagged ? "<th>Why set aside</th>" : ""}</tr>` +
+    rows.map(o => `<tr><td>${o.kind === "moving" ? "Moving" : "Still"}</td><td>${fmt(o.snr_db)}</td>
+      <td>${fmt(o.range_km)}</td><td>${fmt(o.bearing_deg, 0)}</td>
+      <td>${o.kind === "moving" ? (o.radial_speed_ms > 0 ? "+" : "") + fmt(o.radial_speed_ms, 2) : "0"}</td>
+      <td>${fmt(o.lat, 4)}</td><td>${fmt(o.lon, 4)}</td>
+      ${flagged ? `<td class="why">${esc(o.why_flagged)}</td>` : ""}</tr>`).join("") + "</table></div>";
+}
+
+function drawMap(d) {
+  if (typeof L === "undefined") {
+    $("map").outerHTML = `<p class="muted">(The map could not load.)</p>`; return; }
+  if (map) { map.remove(); map = null; }
+  map = L.map("map");
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    { maxZoom: 13, attribution: "&copy; OpenStreetMap contributors" }).addTo(map);
+  const pts = [];
+  if (d.radar_latlon) {
+    L.marker(d.radar_latlon, { icon: L.divIcon({ className: "", html:
+      '<div style="width:12px;height:12px;background:#000;border:2px solid #fff"></div>' }) })
+      .addTo(map).bindPopup("Radar site"); pts.push(d.radar_latlon); }
+  for (const o of [...d.objects].sort((a, b) => !!b.flag - !!a.flag)) {  // candidates drawn on top
+    const col = o.flag ? "#888" : (o.kind === "moving" ? "#d62728" : "#1f6feb");
+    const m = L.circleMarker([o.lat, o.lon], { radius: o.flag ? 4 : 7, color: col,
+      fillColor: col, fillOpacity: o.flag ? .3 : .7, weight: 1.5 }).addTo(map);
+    m.bindPopup(`<b>${o.kind === "moving" ? "Moving" : "Still"}</b> ${fmt(o.snr_db)} dB<br>
+      ${fmt(o.range_km)} km at ${fmt(o.bearing_deg, 0)}&deg;` +
+      (o.kind === "moving" ? `<br>speed toward/away ${fmt(o.radial_speed_ms, 2)} m/s` : "") +
+      (o.flag ? `<br><i>set aside: ${esc(o.why_flagged)}</i>` : ""));
+    pts.push([o.lat, o.lon]);
+  }
+  if (pts.length) map.fitBounds(pts, { padding: [20, 20] }); else map.setView([31.8, 34.6], 9);
+}
+
+loadSites().catch(err => showError("Could not load the antenna layout file: " + err.message));
+// Start loading Python in the background as soon as the page opens, so the first run is quicker.
+getWorker().postMessage({ warmup: true });
+</script>
+</body>
+</html>
