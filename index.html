@@ -81,6 +81,12 @@ pre { background: var(--chip); padding: 10px; border-radius: 6px; overflow-x: au
       <span class="hint">One radar recording, as written by the WERA radar</span>
       <input type="file" id="sortFile" accept=".SORT,.sort,.RFI,.rfi" hidden>
     </div>
+    <div style="margin-top:10px">
+      <label for="example">No file at hand? Try an example
+        <span class="hint">downloads it from this site and picks its antenna layout</span></label>
+      <select id="example"><option value="">Choose an example file...</option></select>
+      <p class="hint" id="exampleAbout" style="margin-top:6px"></p>
+    </div>
 
     <div class="grid" style="margin-top:14px">
       <div>
@@ -126,6 +132,15 @@ const fmt = (x, d = 1) => (x === null || x === undefined || isNaN(x)) ? "" : Num
 // Antenna layouts shipped with the site. Visitors can add their own (kept in this tab only).
 let sites = [
   { path: "israel2/site_israel2_provisional.json", note: "provisional" },
+  { path: "examples/site_synthetic.json", note: "synthetic" },
+];
+
+// Ready-made .SORT files visitors can try. Each names the antenna layout it belongs to.
+const EXAMPLES = [
+  { file: "examples/synthetic_test.SORT", label: "Synthetic test file (made-up data, 15.7 MB)",
+    site: "examples/site_synthetic.json",
+    about: "Computer-generated radar data from an imaginary 12-antenna site at 16 MHz, with sea " +
+           "currents chosen in advance, so you can see what clean results look like." },
 ];
 let file = null, worker = null, busy = false;
 
@@ -146,18 +161,20 @@ const OUTPUTS = [
    "distance for one direction."],
 ];
 
-async function loadSites() {
+async function loadSites(selectIndex) {
   for (const s of sites) if (!s.text) {
     s.text = await (await fetch(s.path)).text();
     const j = JSON.parse(s.text); s.n = j.antennas_en_m.length;
   }
   $("site").innerHTML = sites.map((s, i) =>
     `<option value="${i}">${esc(s.path)} (${s.n} antennas${s.note ? ", " + s.note : ""})</option>`).join("");
-  $("site").value = String(sites.length - 1 >= 0 && sites.at(-1).mine ? sites.length - 1 : 0);
+  $("site").value = String(selectIndex ?? (sites.at(-1).mine ? sites.length - 1 : 0));
   showSiteWarn();
 }
 function siteWarnText(s) {
   if (!s) return "";
+  if (s.note === "synthetic") return "This is the <b>made-up layout</b> of the synthetic test file. " +
+    "Use it only with that file.";
   if (s.note === "provisional") return "This antenna layout is a <b>guess</b> (a straight line, 18.3 m apart). " +
     "Distances and speeds are fine, but <b>directions (bearings) are provisional</b> until the real layout is known.";
   return "";
@@ -168,6 +185,27 @@ function showSiteWarn() {
 }
 $("site").onchange = showSiteWarn;
 
+$("example").innerHTML += EXAMPLES.map((x, i) =>
+  `<option value="${i}">${esc(x.label)}</option>`).join("");
+$("example").onchange = async () => {
+  const x = EXAMPLES[+$("example").value];
+  $("exampleAbout").textContent = x ? x.about : "";
+  if (!x) return;
+  $("dropText").textContent = "Downloading the example file...";
+  $("runBtn").disabled = true;
+  try {
+    const r = await fetch(x.file);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const blob = await r.blob();
+    setFile(new File([blob], x.file.split("/").pop()));
+    const i = sites.findIndex(s => s.path === x.site);
+    if (i >= 0) { $("site").value = String(i); showSiteWarn(); }
+  } catch (err) {
+    setFile(null);
+    showError("Could not download the example file (" + err.message + "). Check your connection and try again.");
+  }
+};
+
 function setFile(f) {
   file = f;
   $("dropText").textContent = f ? `${f.name}  (${(f.size / 1e6).toFixed(1)} MB)` :
@@ -175,12 +213,13 @@ function setFile(f) {
   $("runBtn").disabled = !f || busy;
 }
 $("drop").onclick = () => $("sortFile").click();
-$("sortFile").onchange = e => setFile(e.target.files[0]);
+$("sortFile").onchange = e => { $("example").value = ""; $("exampleAbout").textContent = ""; setFile(e.target.files[0]); };
 ["dragover", "dragenter"].forEach(ev => $("drop").addEventListener(ev, e => {
   e.preventDefault(); $("drop").classList.add("over"); }));
 ["dragleave", "drop"].forEach(ev => $("drop").addEventListener(ev, e => {
   e.preventDefault(); $("drop").classList.remove("over"); }));
-$("drop").addEventListener("drop", e => { if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+$("drop").addEventListener("drop", e => { if (e.dataTransfer.files[0]) {
+  $("example").value = ""; $("exampleAbout").textContent = ""; setFile(e.dataTransfer.files[0]); } });
 
 $("addSiteBtn").onclick = () => $("siteFile").click();
 $("siteFile").onchange = async e => {
