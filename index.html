@@ -60,6 +60,7 @@ td.why { white-space: normal; min-width: 220px; color: var(--muted); }
 .fig img { display: block; max-width: 100%; max-height: 760px; width: auto; border-radius: 6px; border: 1px solid var(--line); background: #fff; }
 .fig { margin-top: 18px; }
 code { overflow-wrap: anywhere; }
+details.more > summary { display: inline-block; padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; color: var(--accent); font-weight: 600; }
 pre { background: var(--chip); padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
 .runs li { margin: 2px 0; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
@@ -162,10 +163,16 @@ const OUTPUTS = [
    "One coloured square per radar cell: how strong the brightest echo is there, " +
    "whatever its speed. Most of it is the sea. A horizontal stripe across all " +
    "directions at one distance is usually electrical hum, not something real."],
+  ["run.png", "Overview: how the antennas listen, and sea currents",
+   "Top left: how sharply the antenna array listens in one direction (narrow peak = " +
+   "sharp). Top right: echo strength by direction and speed at one distance; the two " +
+   "dashed lines are where sea-wave echoes are expected. Bottom left: a single " +
+   "spectrum with its two sea peaks. Bottom right: the surface current toward (blue) " +
+   "or away from (red) the radar, worked out from how far the sea peaks moved.", true],
   ["run_cube.png", "The full data cube, sliced",
    "The script turns the file into a 3-D block: direction x speed x distance. " +
    "Left: direction-by-speed slices at 8 distances, near to far. Right: speed-by-" +
-   "distance for one direction."],
+   "distance for one direction.", true],
 ];
 
 async function loadSites(selectIndex) {
@@ -297,11 +304,14 @@ function showRun(d) {
       ${hd["bearings scanned"] ? `<div class="stat"><b>${esc(hd["bearings scanned"])}</b>directions scanned</div>` : ""}
       ${hd["valid radial currents"] ? `<div class="stat"><b>${esc(hd["valid radial currents"].split(" ")[0])}</b>cells with a sea-current reading</div>` : ""}
     </div>`;
-    for (const [f, title, explain] of OUTPUTS) if (d.files[f]) {
+    let more = "";
+    for (const [f, title, explain, extra] of OUTPUTS) if (d.files[f]) {
       const u = url(f, "image/png");
-      h += `<div class="fig"><h3>${esc(title)}</h3><p class="muted">${esc(explain)}</p>
+      const fig = `<div class="fig"><h3>${esc(title)}</h3><p class="muted">${esc(explain)}</p>
         <a href="${u}" target="_blank"><img src="${u}" alt="${esc(title)}"></a></div>`;
+      if (extra) more += fig; else h += fig;
     }
+    if (more) h += `<details class="more" style="margin-top:18px"><summary>More: overview and the full data cube</summary>${more}</details>`;
     const base = d.filename.replace(/\.[^.]*$/, "");
     const dl = [];
     if (d.files["run.npz"]) dl.push(`<a href="${url("run.npz", "application/octet-stream")}" download="${esc(base)}_cube.npz">data cube (.npz, for Python / ML)</a>`);
