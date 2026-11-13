@@ -99,17 +99,6 @@ pre { background: var(--chip); padding: 10px; border-radius: 6px; overflow-x: au
       </div>
     </div>
 
-    <details style="margin-top:10px">
-      <summary>More settings (optional)</summary>
-      <div class="grid" style="margin-top:10px">
-        <div><label for="rangeKm">Distance for the overview plots, km <span class="hint">default:
-          one third of the maximum</span></label>
-          <input type="number" id="rangeKm" placeholder="auto" step="0.5"></div>
-        <div><label for="bearing">Direction for the overview plots, degrees
-          <span class="hint">compass, 0 = north. Default: straight out from the array</span></label>
-          <input type="number" id="bearing" placeholder="auto" step="1"></div>
-      </div>
-    </details>
 
     <div id="siteWarn"></div>
     <div style="margin-top:14px">
@@ -274,8 +263,6 @@ function getWorker() {
 $("runBtn").onclick = async () => {
   const site = sites[+$("site").value];
   const args = [];
-  if ($("rangeKm").value) args.push("--range-km", $("rangeKm").value);
-  if ($("bearing").value) args.push("--bearing", $("bearing").value);
   busy = true; $("runBtn").disabled = true;
   $("status").innerHTML = '<span class="spinner"></span>Starting...';
   const bytes = await file.arrayBuffer();
