@@ -42,10 +42,20 @@ def radar_latlon(path):
     except Exception:
         return None
 
+def coverage(path):
+    """Area the radar looks at: farthest range and the scanned bearings."""
+    try:
+        d = np.load(path)
+        b = d["bearings_deg"]
+        return [float(d["ranges_km"][-1]), float(b.min()), float(b.max())]
+    except Exception:
+        return None
+
 def summary(log):
     return json.dumps({"header": parse_log_header(log),
                        "objects": read_objects("run_objects.csv"),
-                       "radar_latlon": radar_latlon("run.npz")})
+                       "radar_latlon": radar_latlon("run.npz"),
+                       "coverage": coverage("run.npz")})
 `;
 
 const RUNNER = String.raw`

@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Beamforming Viewer</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 :root {
   --bg: #f6f7f9; --panel: #ffffff; --ink: #1c2330; --muted: #5d6778; --line: #dde1e8;
@@ -59,6 +61,11 @@ th { color: var(--muted); font-weight: 600; }
 td.why { white-space: normal; min-width: 220px; color: var(--muted); }
 .fig img { display: block; max-width: 100%; max-height: 760px; width: auto; border-radius: 6px; border: 1px solid var(--line); background: #fff; }
 .fig { margin-top: 18px; }
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; align-items: start; }
+.pair > * { min-width: 0; }
+#aisMap { height: 450px; border-radius: 6px; border: 1px solid var(--line); }
+.soon { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+  background: var(--chip); color: var(--muted); margin-left: 6px; vertical-align: 2px; }
 code { overflow-wrap: anywhere; }
 details.more > summary { display: inline-block; padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; color: var(--accent); font-weight: 600; }
 pre { background: var(--chip); padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
@@ -321,13 +328,18 @@ function showRun(d) {
       ${hd["bearings scanned"] ? `<div class="stat"><b>${esc(hd["bearings scanned"])}</b>directions scanned</div>` : ""}
       ${hd["valid radial currents"] ? `<div class="stat"><b>${esc(hd["valid radial currents"].split(" ")[0])}</b>cells with a sea-current reading</div>` : ""}
     </div>`;
-    let more = "";
+    let more = "", main = "";
     for (const [f, title, explain, extra] of OUTPUTS) if (d.files[f]) {
       const u = url(f, "image/png");
       const fig = `<div class="fig"><h3>${esc(title)}</h3><p class="muted">${esc(explain)}</p>
         <a href="${u}" target="_blank"><img src="${u}" alt="${esc(title)}"></a></div>`;
-      if (extra) more += fig; else h += fig;
+      if (extra) more += fig; else main += fig;
     }
+    // Beamforming result on the left, AIS ship positions on a map on the right (stacks on phones).
+    h += `<div class="pair"><div>${main}</div><div class="fig"><h3>Ships from AIS<span class="soon">coming soon</span></h3>
+      <p class="muted">Ships broadcast their position by radio (AIS). Their tracks will be shown here for the
+      time of this recording, to compare with the radar. For now: the radar site (black square) and the
+      area it scans (blue fan).</p><div id="aisMap"></div></div></div>`;
     if (more) h += `<details class="more" style="margin-top:18px"><summary>More: overview and the full data cube</summary>${more}</details>`;
     const base = d.filename.replace(/\.[^.]*$/, "");
     const dl = [];
@@ -337,9 +349,35 @@ function showRun(d) {
       <code>${esc(d.command)}</code></p><pre>${esc(d.log)}</pre></details></div>`;
   }
   $("results").innerHTML = h;
+  if (d.ok) drawAisMap(d);
   $("results").scrollIntoView({ behavior: "smooth" });
 }
 
+
+let aisMap = null;
+function drawAisMap(d) {
+  if (typeof L === "undefined") { $("aisMap").outerHTML = '<p class="muted">(The map could not load.)</p>'; return; }
+  if (aisMap) { aisMap.remove(); aisMap = null; }
+  const site = d.radar_latlon || [31.8306, 34.6358];
+  aisMap = L.map("aisMap");
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    { maxZoom: 14, attribution: "&copy; OpenStreetMap contributors" }).addTo(aisMap);
+  L.marker(site, { icon: L.divIcon({ className: "", iconSize: [14, 14], html:
+    '<div style="width:12px;height:12px;background:#000;border:2px solid #fff"></div>' }) })
+    .addTo(aisMap).bindPopup("Radar site");
+  if (d.coverage) {
+    // Fan of the scanned directions out to the farthest range (flat-earth step, fine at this scale).
+    const [rKm, b0, b1] = d.coverage, pts = [site];
+    for (let b = b0; b <= b1 + 1e-9; b += (b1 - b0) / 40) {
+      const t = b * Math.PI / 180;
+      pts.push([site[0] + rKm * Math.cos(t) / 111.32,
+                site[1] + rKm * Math.sin(t) / (111.32 * Math.cos(site[0] * Math.PI / 180))]);
+    }
+    const fan = L.polygon(pts, { color: "#1f6feb", weight: 1, fillOpacity: 0.08 }).addTo(aisMap)
+      .bindPopup(`Area the radar scans: ${b0.toFixed(0)}&deg; to ${b1.toFixed(0)}&deg;, out to ${rKm.toFixed(0)} km`);
+    aisMap.fitBounds(fan.getBounds(), { padding: [10, 10] });
+  } else aisMap.setView(site, 9);
+}
 
 loadSites().catch(err => showError("Could not load the antenna layout file: " + err.message));
 // Start loading Python in the background as soon as the page opens, so the first run is quicker.
