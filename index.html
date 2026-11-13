@@ -199,20 +199,38 @@ $("site").onchange = showSiteWarn;
 
 $("example").innerHTML += EXAMPLES.map((x, i) =>
   `<option value="${i}">${esc(x.label)}</option>`).join("");
+// Each pick gets a number; a slow example download that finishes after the visitor
+// has picked something else is ignored instead of replacing their choice.
+let pickId = 0;
 $("example").onchange = async () => {
+  const my = ++pickId;
   const x = EXAMPLES[+$("example").value];
   $("exampleAbout").textContent = x ? x.about : "";
-  if (!x) return;
-  $("dropText").textContent = "Downloading the example file...";
+  if (!x) { setFile(file); return; }
+  file = null;
   $("runBtn").disabled = true;
+  const show = t => { if (my === pickId) { $("dropText").textContent = t; if (!busy) $("status").textContent = t; } };
+  show("Downloading the example file...");
   try {
     const r = await fetch(x.file);
     if (!r.ok) throw new Error("HTTP " + r.status);
-    const blob = await r.blob();
-    setFile(new File([blob], x.file.split("/").pop()));
+    const total = +r.headers.get("Content-Length") || 0;
+    const parts = []; let got = 0;
+    const reader = r.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value); got += value.length;
+      show(`Downloading the example file... ${total ? Math.round(100 * got / total) + "%" : (got / 1e6).toFixed(1) + " MB"}`);
+    }
+    if (my !== pickId) return;
+    $("status").textContent = "";
+    setFile(new File(parts, x.file.split("/").pop()));
     const i = sites.findIndex(s => s.path === x.site);
     if (i >= 0) { $("site").value = String(i); showSiteWarn(); }
   } catch (err) {
+    if (my !== pickId) return;
+    $("status").textContent = "";
     setFile(null);
     showError("Could not download the example file (" + err.message + "). Check your connection and try again.");
   }
@@ -225,12 +243,13 @@ function setFile(f) {
   $("runBtn").disabled = !f || busy;
 }
 $("drop").onclick = () => $("sortFile").click();
-$("sortFile").onchange = e => { $("example").value = ""; $("exampleAbout").textContent = ""; setFile(e.target.files[0]); };
+$("sortFile").onchange = e => { pickId++; $("example").value = ""; $("exampleAbout").textContent = ""; setFile(e.target.files[0]); };
 ["dragover", "dragenter"].forEach(ev => $("drop").addEventListener(ev, e => {
   e.preventDefault(); $("drop").classList.add("over"); }));
 ["dragleave", "drop"].forEach(ev => $("drop").addEventListener(ev, e => {
   e.preventDefault(); $("drop").classList.remove("over"); }));
 $("drop").addEventListener("drop", e => { if (e.dataTransfer.files[0]) {
+  pickId++;
   $("example").value = ""; $("exampleAbout").textContent = ""; setFile(e.dataTransfer.files[0]); } });
 
 $("addSiteBtn").onclick = () => $("siteFile").click();
