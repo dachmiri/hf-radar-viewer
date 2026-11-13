@@ -189,8 +189,6 @@ function siteWarnText(s) {
   if (!s) return "";
   if (s.note === "synthetic") return "This is the <b>made-up layout</b> of the synthetic test file. " +
     "Use it only with that file.";
-  if (s.note === "provisional") return "This antenna layout is a <b>guess</b> (a straight line, 18.3 m apart). " +
-    "Distances and speeds are fine, but <b>directions (bearings) are provisional</b> until the real layout is known.";
   return "";
 }
 function showSiteWarn() {
